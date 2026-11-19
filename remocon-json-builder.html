@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Command JSON Builder</title>
+<style>
+:root{--bg:#f6f6f3;--card:#fff;--fg:#1c1c1a;--mut:#6b6b66;--bd:#dcdcd5;--ac:#2f5fd0;--acf:#fff;--code:#14161a;--codefg:#d7e0ea;--danger:#c0392b;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17181a;--card:#222426;--fg:#ececea;--mut:#9a9a94;--bd:#3a3c3f;--ac:#6f95f0;--acf:#0b1020;--code:#0e0f11;--codefg:#d7e0ea;--danger:#e8705f;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#17181a;--card:#222426;--fg:#ececea;--mut:#9a9a94;--bd:#3a3c3f;--ac:#6f95f0;--acf:#0b1020;--code:#0e0f11;--codefg:#d7e0ea;--danger:#e8705f;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 48px;display:grid;gap:20px;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+h1{font-size:20px;margin:0 0 4px;grid-column:1/-1}
+h1+p{margin:0;color:var(--mut);grid-column:1/-1}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:0 0 10px;display:flex;justify-content:space-between;align-items:center}
+section{margin-bottom:22px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:10px}
+.grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+label{display:block;font-size:12px;color:var(--mut);margin-bottom:3px}
+input,select,textarea{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:7px 9px;min-width:0}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--ac);outline-offset:-1px}
+button{font:inherit;cursor:pointer;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:7px;padding:7px 12px}
+button.p{background:var(--ac);color:var(--acf);border-color:var(--ac)}
+button.d{color:var(--danger)}
+button.cap.on{outline:2px solid var(--ac)}
+.row{display:flex;gap:8px;align-items:end}
+.row>div{flex:1;min-width:0}
+.row>button{flex:none}
+.hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;color:var(--mut)}
+.sub{border-top:1px dashed var(--bd);margin-top:10px;padding-top:10px}
+.tag{font-size:11px;font-weight:600;color:var(--ac);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.chk{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--mut);margin-top:6px}
+.chk input{width:auto}
+.side{position:sticky;top:12px;align-self:start}
+@media(max-width:860px){.side{position:static}}
+pre{margin:0;background:var(--code);color:var(--codefg);padding:12px;border-radius:10px;overflow:auto;max-height:60vh;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.bar{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+details{margin-top:12px}
+textarea{min-height:110px;font:12px ui-monospace,Menlo,monospace}
+.err{color:var(--danger);font-size:12px;margin-top:4px}
+</style>
+</head>
+<body>
+<main>
+<h1>Command JSON Builder</h1>
+<p>Define on-screen buttons and input → command mappings. The JSON updates live.</p>
+
+<div>
+  <section>
+    <h2>Buttons <button class="p" id="addBtn">+ Add button</button></h2>
+    <div id="buttons"></div>
+  </section>
+  <section>
+    <h2>Commands <button class="p" id="addCmd">+ Add command</button></h2>
+    <div id="cmds"></div>
+  </section>
+</div>
+
+<div class="side">
+  <h2>JSON output</h2>
+  <pre id="out"></pre>
+  <div class="bar">
+    <button class="p" id="copy">Copy</button>
+    <button id="dl">Download</button>
+  </div>
+  <details>
+    <summary>Import existing JSON</summary>
+    <textarea id="imp" placeholder="Paste JSON here"></textarea>
+    <div class="bar"><button id="load">Load</button></div>
+    <div class="err" id="err"></div>
+  </details>
+</div>
+</main>
+
+<script>
+const ITYPES=['keydown','keyup','mousedown','mouseup'];
+const CTYPES=['keydown','keyup'];
+let S={buttons:[{text:'W',id:'↑'}],commands:[]};
+let capture=null;
+
+const $=id=>document.getElementById(id);
+const isKey=t=>t.startsWith('key');
+const newCmd=()=>({itype:'keydown',keyCode:'',text:'',ctype:'keydown',key:'',link:true,char:'',cmd:''});
+
+function build(){
+  return{
+    api:{commands:S.commands.map(c=>{
+      const k=isKey(c.itype);
+      const input=k?{type:c.itype,keyCode:Number(c.keyCode)||0}:{type:c.itype,text:c.text};
+      const key=Number(k&&c.link?c.keyCode:c.key)||0;
+      return{input,command:{type:c.ctype,key,characterCode:c.char,cmd:c.cmd}};
+    })},
+    buttons:S.buttons.map(b=>({text:b.text,id:b.id}))
+  };
+}
+function out(){$('out').textContent=JSON.stringify(build(),null,4)}
+
+function h(tag,attrs={},...kids){
+  const e=document.createElement(tag);
+  for(const[k,v]of Object.entries(attrs)){
+    if(k==='class')e.className=v;else if(k.startsWith('on'))e[k]=v;else if(k==='value')e.value=v;else if(k==='checked')e.checked=v;else e.setAttribute(k,v);
+  }
+  kids.flat().forEach(c=>e.append(c));return e;
+}
+function field(label,control){return h('div',{},h('label',{},label),control)}
+function txt(obj,prop,ph='',type='text'){
+  return h('input',{type,value:obj[prop],placeholder:ph,oninput:e=>{obj[prop]=e.target.value;out();}});
+}
+function sel(obj,prop,opts,onchange){
+  const s=h('select',{},opts.map(o=>h('option',{value:o.v??o},o.l??o)));
+  s.value=obj[prop];
+  s.onchange=e=>{obj[prop]=e.target.value;onchange&&onchange();out();};
+  return s;
+}
+function capField(obj,prop,label,c){
+  const i=h('input',{type:'number',value:obj[prop],placeholder:'e.g. 87',oninput:e=>{obj[prop]=e.target.value;out();}});
+  const b=h('button',{class:'cap',type:'button',onclick:()=>{
+    document.querySelectorAll('.cap.on').forEach(x=>{x.classList.remove('on');x.textContent='Capture'});
+    b.classList.add('on');b.textContent='Press a key…';
+    capture={obj,prop,i,b,c};
+  }},'Capture');
+  return h('div',{},h('label',{},label),h('div',{class:'row'},h('div',{},i),b));
+}
+document.addEventListener('keydown',e=>{
+  if(!capture)return;
+  e.preventDefault();
+  const{obj,prop,i,b,c}=capture;
+  obj[prop]=e.keyCode;i.value=e.keyCode;
+  if(c&&!c.char&&e.key.length===1){c.char=e.key.toUpperCase();render();}
+  b.classList.remove('on');b.textContent='Capture';capture=null;out();
+});
+
+function render(){
+  const bw=$('buttons');bw.innerHTML='';
+  S.buttons.forEach((b,i)=>{
+    bw.append(h('div',{class:'card'},h('div',{class:'row'},
+      field('Label (text)',txt(b,'text','Boom (e)')),
+      field('Id',txt(b,'id','e')),
+      h('button',{class:'d',onclick:()=>{S.buttons.splice(i,1);render();out();}},'✕'))));
+  });
+  if(!S.buttons.length)bw.append(h('p',{style:'color:var(--mut)'},'No buttons yet.'));
+
+  const cw=$('cmds');cw.innerHTML='';
+  S.commands.forEach((c,i)=>{
+    const k=isKey(c.itype);
+    const ids=[...new Set(S.buttons.map(b=>b.id).filter(Boolean))];
+    if(!k&&c.text&&!ids.includes(c.text))ids.push(c.text);
+    const inputRow=[
+      field('Input type',sel(c,'itype',ITYPES,()=>{
+        const kk=isKey(c.itype);
+        c.ctype=c.itype.endsWith('down')?'keydown':'keyup';
+        if(kk)c.link=true;
+        render();
+      })),
+      k?capField(c,'keyCode','keyCode',c)
+       :field('Button id',(()=>{
+          const s=h('select',{},h('option',{value:''},'— choose —'),ids.map(x=>h('option',{value:x},x)));
+          s.value=c.text;s.onchange=e=>{c.text=e.target.value;out();};return s;})())
+    ];
+    const keyPart=k
+      ?h('div',{},h('label',{},'Key (linked to keyCode)'),
+          h('input',{value:c.link?String(c.keyCode):c.key,disabled:c.link,oninput:e=>{c.key=e.target.value;out();}}),
+          h('div',{class:'chk'},h('input',{type:'checkbox',checked:c.link,onchange:e=>{c.link=e.target.checked;if(!c.link)c.key=c.keyCode;render();out();}}),'Same as input keyCode'))
+      :capField(c,'key','Key',c);
+    cw.append(h('div',{class:'card'},
+      h('div',{class:'hd'},h('span',{},'Command #'+(i+1)),h('button',{class:'d',onclick:()=>{S.commands.splice(i,1);render();out();}},'Remove')),
+      h('div',{class:'tag'},'Input'),
+      h('div',{class:'grid'},inputRow),
+      h('div',{class:'sub'},h('div',{class:'tag'},'Command'),
+        h('div',{class:'grid'},
+          field('Type',sel(c,'ctype',CTYPES)),
+          keyPart,
+          field('characterCode',txt(c,'char','W / STOP')),
+          field('cmd',txt(c,'cmd','forward')))),
+    ));
+  });
+  if(!S.commands.length)cw.append(h('p',{style:'color:var(--mut)'},'No commands yet.'));
+}
+
+$('addBtn').onclick=()=>{S.buttons.push({text:'',id:''});render();out();};
+$('addCmd').onclick=()=>{S.commands.push(newCmd());render();out();};
+$('copy').onclick=async e=>{
+  try{await navigator.clipboard.writeText($('out').textContent);e.target.textContent='Copied!';}
+  catch{const r=document.createRange();r.selectNodeContents($('out'));getSelection().removeAllRanges();getSelection().addRange(r);e.target.textContent='Selected — press copy';}
+  setTimeout(()=>e.target.textContent='Copy',1500);
+};
+$('dl').onclick=()=>{
+  const a=h('a',{href:URL.createObjectURL(new Blob([$('out').textContent],{type:'application/json'})),download:'commands.json'});
+  document.body.append(a);a.click();a.remove();
+};
+$('load').onclick=()=>{
+  try{
+    const j=JSON.parse($('imp').value);
+    S.buttons=(j.buttons||[]).map(b=>({text:b.text??'',id:b.id??''}));
+    S.commands=((j.api&&j.api.commands)||[]).map(x=>{
+      const i=x.input||{},m=x.command||{};
+      const k=isKey(i.type||'keydown');
+      return{itype:i.type,keyCode:k?(i.keyCode??''):'',text:k?'':(i.text??''),
+        ctype:m.type||'keydown',key:m.key??'',link:k&&i.keyCode===m.key,char:m.characterCode??'',cmd:m.cmd??''};
+    });
+    $('err').textContent='';render();out();
+  }catch(e){$('err').textContent='Invalid JSON: '+e.message;}
+};
+render();out();
+</script>
+</body>
+</html>
